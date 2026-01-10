@@ -301,14 +301,12 @@ fn test_loop() {
         // loop:
         0x2101, // ADDI R1, 0x01       ; Counter++ (now R1 = 1, 2, 3...)
         0x3321, // SUB R3, R2, R1      ; R3 = Limit - Counter
-        0xF4FD, // BNE R3, -3          ; If R3 != 0, jump back to ADDI
+        0xF3FD, // BNE R3, -3          ; If R3 != 0, jump back to ADDI
         0xFFFF, // HALT
     ];
     
     vm.load_program(&program, 0).unwrap();
     vm.run(1000).unwrap();
-
-    println!("R3: {}", vm.registers.read_gp(3));
     
     assert_eq!(vm.registers.read_gp(1), 10, "R1 should be 10");
     assert!(vm.halted, "VM should be halted");

@@ -71,10 +71,10 @@ impl InstructionDecoder {
         if opcode == 0xF {
             let extended_op = ((instruction >> 8) & 0xFF) as u8;
             match extended_op {
-                0xF0 => return (InstructionFormat::Extended, "CALL"),
-                0xF1 => return (InstructionFormat::Extended, "RET"),
-                0xF2 => return (InstructionFormat::Extended, "PUSH"),
-                0xF3 => return (InstructionFormat::Extended, "POP"),
+                0xFA => return (InstructionFormat::Extended, "CALL"),
+                0xFB => return (InstructionFormat::Extended, "RET"),
+                0xFC => return (InstructionFormat::Extended, "PUSH"),
+                0xFD => return (InstructionFormat::Extended, "POP"),
                 _ => return (InstructionFormat::BType, "BNE"),
             }
         }

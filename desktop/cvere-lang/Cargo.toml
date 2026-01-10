@@ -1,10 +1,10 @@
 [package]
-name = "cvere"
+name = "cvere_lang"
 version = "1.0.0"
 edition = "2021"
 
 [[bin]]
-name = "cvere"
+name = "cvere_lang"
 path = "src/main.rs"
 
 [dependencies]
@@ -12,5 +12,5 @@ path = "src/main.rs"
 [dev-dependencies]
 
 [lib]
-name = "cvere"
+name = "cvere_lang"
 path = "src/lib.rs"
