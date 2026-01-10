@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "cvere_lang"
+name = "cvere_vm"
 version = "1.0.0"

@@ -5,6 +5,7 @@
 
 use crate::memory::Memory;
 use crate::registers::{RegisterFile, StatusFlags};
+use crate::syscall::{Syscall, Console};
 use crate::decoder::{InstructionDecoder, InstructionFormat};
 use std::fmt;
 
@@ -22,6 +23,10 @@ pub struct CVEREVM {
     
     /// Debugging
     pub trace_enabled: bool,
+
+    /// Syscall support
+    pub console: Console,
+    pub syscall_enabled: bool,
 }
 
 impl CVEREVM {
@@ -33,7 +38,135 @@ impl CVEREVM {
             halted: false,
             cycle_count: 0,
             trace_enabled: false,
+            console: Console::new(),
+            syscall_enabled: true,
         }
+    }
+
+    /// Handle system call
+    fn handle_syscall(&mut self) -> Result<(), String> {
+        if !self.syscall_enabled {
+            return Err("Syscalls are disabled".to_string());
+        }
+
+        // Syscall number in R1, arguments in R2-R4
+        let syscall_num = self.registers.read_gp(1);
+        let syscall = Syscall::from_u16(syscall_num);
+
+        if self.trace_enabled {
+            println!("SYSCALL: {:?} (0x{:04X})", syscall, syscall_num);
+        }
+
+        match syscall {
+            Syscall::Exit => {
+                let exit_code = self.registers.read_gp(2);
+                if self.trace_enabled {
+                    println!("Exit with code: {}", exit_code);
+                }
+                self.halted = true;
+            }
+
+            Syscall::PrintChar => {
+                let char_code = self.registers.read_gp(2);
+                if let Some(c) = char::from_u32(char_code as u32) {
+                    self.console.print_char(c);
+                }
+            }
+
+            Syscall::PrintHex => {
+                let value = self.registers.read_gp(2);
+                self.console.print_hex(value);
+            }
+
+            Syscall::ReadChar => {
+                if let Some(c) = self.console.read_char() {
+                    self.registers.write_gp(1, c as u16);  // Return in R1
+                } else {
+                    self.registers.write_gp(1, 0xFFFF);  // -1 = no input
+                }
+            }
+
+            Syscall::GetTime => {
+                // Return lower 16 bits of cycle count
+                self.registers.write_gp(1, (self.cycle_count & 0xFFFF) as u16);
+            }
+
+            Syscall::Sleep => {
+                let cycles = self.registers.read_gp(2) as u64;
+                // Simple implementation: just burn cycles
+                for _ in 0..cycles {
+                    self.cycle_count += 1;
+                }
+            }
+
+            Syscall::AllocMem => {
+                // Simplified memory allocator
+                let size = self.registers.read_gp(2);
+                // Return a fake address in heap region (0x2000+)
+                let addr = 0x2000 + (self.cycle_count & 0xFFF) as u16;
+                self.registers.write_gp(1, addr);
+            }
+
+            Syscall::FreeMem => {
+                // Simplified: do nothing
+            }
+
+            _ => {
+                return Err(format!("Unknown syscall: {:?}", syscall));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Execute SYSCALL instruction (new extended instruction)
+    fn execute_syscall_instruction(&mut self) -> Result<(), String> {
+        // Check privilege level
+        if !self.registers.is_kernel_mode() {
+            // User mode syscall: switch to kernel, save state, call handler
+            self.registers.saved_pc = self.registers.pc;
+            self.registers.saved_sr = self.registers.sr;
+            self.registers.enter_kernel_mode();
+            
+            // Handle the syscall
+            self.handle_syscall()?;
+            
+            // Return to user mode
+            self.registers.pc = self.registers.saved_pc;
+            self.registers.sr = self.registers.saved_sr;
+            self.registers.enter_user_mode();
+        } else {
+            // Kernel mode: direct syscall
+            self.handle_syscall()?;
+        }
+
+        Ok(())
+    }
+
+    /// Check memory access permissions
+    fn check_memory_access(&self, address: u16, write: bool) -> Result<(), String> {
+        // Kernel memory: 0x0000-0x0FFF (4KB)
+        // User can read kernel memory but not write to it
+        if address < 0x1000 && write && !self.registers.is_kernel_mode() {
+            return Err(format!("Access violation: User mode cannot write to kernel memory at 0x{:04X}", address));
+        }
+
+        // I/O memory: 0xF000-0xFFFF
+        // Only kernel can access
+        if address >= 0xF000 && !self.registers.is_kernel_mode() {
+            return Err(format!("Access violation: User mode cannot access I/O memory at 0x{:04X}", address));
+        }
+
+        Ok(())
+    }
+
+    /// Enter user mode (privileged instruction)
+    pub fn enter_user_mode(&mut self) -> Result<(), String> {
+        if !self.registers.is_kernel_mode() and !self.registers.is_supervisor_mode() {
+            return Err("Already in user mode".to_string());
+        }
+        self.registers.enter_user_mode();
+        Ok(())
     }
 
     /// Load program into memory
